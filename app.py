@@ -18,10 +18,13 @@ def generiere_produkt_infos(produktname):
         "stammdaten": {{"Marke": "...", "Kategorie": "...", "Release-Jahr": "...", "Kern-Feature": "..."}},
         "beschreibung": "Eine präzise Kurzbeschreibung des Produkts auf Deutsch.",
         "p_l_sieger": "Ehrliche Einschätzung zum Preis-Leistungs-Verhältnis. Gibt es was Besseres?",
-        "alternativen": ["Exakter Name von Alternative 1", "Exakter Name von Alternative 2"],
+        "alternativen": [
+            {{"name": "Exakter Name der Alternative 1", "grund": "Kurzer Grund, warum dies eine gute Alternative ist (z.B. günstiger, besseres Display, etc.)"}},
+            {{"name": "Exakter Name der Alternative 2", "grund": "..."}}
+        ],
         "zubehoer": ["Zubehör 1", "Zubehör 2", "Zubehör 3"]
     }}
-    Wichtig: Die "alternativen" MÜSSEN als Liste (Array) von reinen, exakten Produktnamen zurückgegeben werden, damit man direkt danach suchen kann. Passe die Schlüsselwörter der "stammdaten" sinnvoll an das Produkt an.
+    Wichtig: Die "alternativen" MÜSSEN als Liste von Objekten mit "name" und "grund" zurückgegeben werden. Passe die Schlüsselwörter der "stammdaten" sinnvoll an das Produkt an.
     """
     try:
         response = client.chat.completions.create(
@@ -42,7 +45,10 @@ def generiere_produkt_infos(produktname):
             "stammdaten": {"Status": "KI-Server überlastet", "Datenquelle": "Live-Suche"},
             "beschreibung": f"Live-KI-Analyse für '{produktname}' momentan ausgelastet. Angebote wurden trotzdem geladen!",
             "p_l_sieger": "Bitte anhand der Preise rechts prüfen.",
-            "alternativen": [f"{produktname} Alternative 1", f"{produktname} Alternative 2"],
+            "alternativen": [
+                {"name": f"{produktname} Vorgänger", "grund": "Oft deutlich günstiger bei ähnlicher Leistung."},
+                {"name": "Konkurrenzmodell", "grund": "Bietet manchmal ein besseres Preis-Leistungs-Verhältnis."}
+            ],
             "zubehoer": ["Passendes Zubehör"]
         }
 
@@ -135,14 +141,22 @@ if suchbegriff:
         st.warning("💰 **Preis/Leistung:**")
         st.write(details.get("p_l_sieger", ""))
         
-        # NEU & INTERAKTIV: Die Alternativen als klickbare Direktlinks zum Preisvergleich
-        st.info("🔄 **Beste Alternativen (Direktlink zum Preisvergleich):**")
+        # NEU & INTERAKTIV: Alternativen als Link + Begründung
+        st.info("🔄 **Beste Alternativen:**")
         alternativen_liste = details.get("alternativen", [])
         if isinstance(alternativen_liste, list) and alternativen_liste:
             for alt_item in alternativen_liste:
-                alt_encoded = urllib.parse.quote(alt_item)
-                # Erstellt einen sauberen Markdown-Link direkt zu Geizhals
-                st.markdown(f"• [{alt_item} ➔ Preisvergleich starten](https://geizhals.de/?fs={alt_encoded})")
+                # Prüfen, ob die KI sich an das saubere JSON-Objekt gehalten hat
+                if isinstance(alt_item, dict) and "name" in alt_item and "grund" in alt_item:
+                    alt_name = alt_item["name"]
+                    alt_grund = alt_item["grund"]
+                    alt_encoded = urllib.parse.quote(alt_name)
+                    # Formatiert als: [Link] - Begründung (kursiv)
+                    st.markdown(f"• **[{alt_name} ➔ Preisvergleich](https://geizhals.de/?fs={alt_encoded})**<br>↳ *{alt_grund}*", unsafe_allow_html=True)
+                # Fallback, falls die KI nur einen Textstring zurückgibt
+                elif isinstance(alt_item, str):
+                    alt_encoded = urllib.parse.quote(alt_item)
+                    st.markdown(f"• [{alt_item} ➔ Preisvergleich](https://geizhals.de/?fs={alt_encoded})")
         else:
             st.write("Keine Alternativen geladen.")
         
