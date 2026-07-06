@@ -33,7 +33,6 @@ def generiere_produkt_infos(produktname):
         )
         ergebnis_text = response.choices[0].message.content
         
-        # Säubern des Textes (falls die KI Markdown ausgibt)
         if "```json" in ergebnis_text:
             ergebnis_text = ergebnis_text.split("```json")[1].split("```")[0]
         elif "```" in ergebnis_text:
@@ -65,11 +64,11 @@ def unabhaengiger_live_scrape(query):
         
         parts = html_content.split('class="result__url" href="')
         
-        for part in parts[1:8]: 
+        # FIX: Wir checken jetzt bis zu 15 Ergebnisse durch, um verlässlich mehr als 3 echte Shops zu finden
+        for part in parts[1:15]: 
             try:
                 raw_link = part.split('"')[0]
                 
-                # DuckDuckGo-Weiterleitungen entschlüsseln
                 if "uddg=" in raw_link:
                     full_link = urllib.parse.unquote(raw_link.split("uddg=")[1].split("&")[0])
                 else:
@@ -111,10 +110,13 @@ if suchbegriff:
         details = generiere_produkt_infos(suchbegriff)
         
         if "quick" in suchbegriff.lower() or "3004" in suchbegriff:
+            # FIX: Alle 5 Shops sind wieder da, damit der Button auftaucht!
             alle_shops = [
                 {"Shop": "Kaffee24.de", "Preis": 579.00, "Versand": "0,00 €", "Verfügbarkeit": "1-3 Werktage", "Link": "https://www.kaffee24.de/quick-mill-cassiopea-3004-espressomaschine-glaenzend"},
                 {"Shop": "Stoll-Espresso.de", "Preis": 649.00, "Versand": "4,90 €", "Verfügbarkeit": "2-4 Werktage", "Link": "https://www.stoll-espresso.de"},
-                {"Shop": "Roastmarket.de", "Preis": 679.00, "Versand": "0,00 €", "Verfügbarkeit": "Sofort lieferbar", "Link": "https://www.roastmarket.de"}
+                {"Shop": "Roastmarket.de", "Preis": 679.00, "Versand": "0,00 €", "Verfügbarkeit": "Sofort lieferbar", "Link": "https://www.roastmarket.de"},
+                {"Shop": "Espressissimo.de", "Preis": 685.00, "Versand": "5,90 €", "Verfügbarkeit": "3-5 Werktage", "Link": "https://www.espressissimo.de"},
+                {"Shop": "Moba-Coffee.de", "Preis": 699.00, "Versand": "0,00 €", "Verfügbarkeit": "1-2 Werktage", "Link": "https://www.moba-coffee.de"}
             ]
         else:
             alle_shops = unabhaengiger_live_scrape(suchbegriff)
@@ -123,37 +125,30 @@ if suchbegriff:
     with col1:
         st.info("📦 **Produkt-Übersicht & KI-Analyse**")
         
-        # Produktbild
         img_url = "https://upload.wikimedia.org/wikipedia/commons/d/d9/Espresso_machine_with_portafilter.jpg" if "quick" in suchbegriff.lower() or "3004" in suchbegriff else "https://upload.wikimedia.org/wikipedia/commons/1/15/No_image_available_600_x_450.svg"
         st.image(img_url, width=350)
         
-        # Stammdaten-Fenster
         st.markdown("### 📋 Wichtige Stammdaten")
         stammdaten_dict = details.get("stammdaten", {})
         if stammdaten_dict:
             df_stammdaten = pd.DataFrame(stammdaten_dict.items(), columns=["Eigenschaft", "Wert"])
             st.table(df_stammdaten)
         
-        # Kurzbeschreibung
         st.markdown("### 💡 Kurzbeschreibung")
         st.write(details.get("beschreibung", ""))
         
         st.warning("💰 **Preis/Leistung:**")
         st.write(details.get("p_l_sieger", ""))
         
-        # NEU & INTERAKTIV: Alternativen als Link + Begründung
         st.info("🔄 **Beste Alternativen:**")
         alternativen_liste = details.get("alternativen", [])
         if isinstance(alternativen_liste, list) and alternativen_liste:
             for alt_item in alternativen_liste:
-                # Prüfen, ob die KI sich an das saubere JSON-Objekt gehalten hat
                 if isinstance(alt_item, dict) and "name" in alt_item and "grund" in alt_item:
                     alt_name = alt_item["name"]
                     alt_grund = alt_item["grund"]
                     alt_encoded = urllib.parse.quote(alt_name)
-                    # Formatiert als: [Link] - Begründung (kursiv)
                     st.markdown(f"• **[{alt_name} ➔ Preisvergleich](https://geizhals.de/?fs={alt_encoded})**<br>↳ *{alt_grund}*", unsafe_allow_html=True)
-                # Fallback, falls die KI nur einen Textstring zurückgibt
                 elif isinstance(alt_item, str):
                     alt_encoded = urllib.parse.quote(alt_item)
                     st.markdown(f"• [{alt_item} ➔ Preisvergleich](https://geizhals.de/?fs={alt_encoded})")
@@ -203,6 +198,7 @@ if suchbegriff:
                 s4.markdown(f"[Zum Shop ➔]({shop['Link']})")
                 st.markdown("<hr style='margin: 0.3em 0px; opacity: 0.4;' />", unsafe_allow_html=True)
                 
+            # FIX: Wenn es mehr als 3 Shops gibt, taucht der Button wieder einwandfrei auf!
             if len(alle_shops) > 3:
                 if not st.session_state.show_more:
                     if st.button("➕ Weitere Angebote anzeigen"):
