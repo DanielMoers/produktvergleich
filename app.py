@@ -167,4 +167,45 @@ if suchbegriff:
                 s1.markdown(f"**{shop['Shop']}**\n<small>Versand: {shop['Versand']}</small>", unsafe_allow_html=True)
                 s2.markdown(f"<span style='color:#00c853; font-weight:bold;'>{shop['Preis']:.2f} €</span>", unsafe_allow_html=True)
                 s3.markdown(f"*{shop['Verfügbarkeit']}*")
-                s4.markdown(f"[Zum Shop ➔]({shop['Link']
+                s4.markdown(f"[Zum Shop ➔]({shop['Link']})")
+                st.markdown("<hr style='margin: 0.3em 0px; opacity: 0.4;' />", unsafe_allow_html=True)
+                
+            if len(alle_shops) > 3:
+                if not st.session_state.show_more:
+                    if st.button("➕ Weitere Angebote anzeigen"):
+                        st.session_state.show_more = True
+                        st.rerun()
+                else:
+                    if st.button("➖ Weniger Angebote anzeigen"):
+                        st.session_state.show_more = False
+                        st.rerun()
+        else:
+            st.warning("Keine unabhängigen deutschen Händler direkt gefunden. Nutze die Meta-Plattformen:")
+
+        # Großes Fallback / Ergänzung: Die direkten Plattform-Kacheln für den 12-Monats-Verlauf
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("#### 📈 Direktverknüpfung zu den Preiskurven")
+        
+        suchbegriff_encoded = urllib.parse.quote(suchbegriff)
+        geizhals_url = f"https://geizhals.de/?fs={suchbegriff_encoded}"
+        idealo_url = f"https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q={suchbegriff_encoded}"
+        
+        st.markdown(
+            f"""
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <a href="{geizhals_url}" target="_blank" style="text-decoration: none;">
+                    <div style="background-color: #d94540; color: white; padding: 12px; text-align: center; border-radius: 6px; font-weight: bold; font-size: 14px;">
+                        📊 Auf Geizhals öffnen (Echte Preiskurve & alle Shops)
+                    </div>
+                </a>
+                <a href="{idealo_url}" target="_blank" style="text-decoration: none;">
+                    <div style="background-color: #002f6c; color: white; padding: 12px; text-align: center; border-radius: 6px; font-weight: bold; font-size: 14px;">
+                        📈 Auf Idealo öffnen (Verlauf & Markttrends)
+                    </div>
+                </a>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+else:
+    st.info("👋 Willkommen! Bitte gib oben ein beliebiges Produkt ein, um die Live-KI-Analyse und Händlersuche zu starten.")
