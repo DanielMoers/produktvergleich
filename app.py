@@ -18,10 +18,10 @@ def generiere_produkt_infos(produktname):
         "stammdaten": {{"Marke": "...", "Kategorie": "...", "Release-Jahr": "...", "Kern-Feature": "..."}},
         "beschreibung": "Eine präzise Kurzbeschreibung des Produkts auf Deutsch.",
         "p_l_sieger": "Ehrliche Einschätzung zum Preis-Leistungs-Verhältnis. Gibt es was Besseres?",
-        "alternativen": "Nenne 1-2 konkrete Alternativen.",
+        "alternativen": ["Exakter Name von Alternative 1", "Exakter Name von Alternative 2"],
         "zubehoer": ["Zubehör 1", "Zubehör 2", "Zubehör 3"]
     }}
-    Wichtig: Passe die Schlüsselwörter der "stammdaten" sinnvoll an das jeweilige Produkt an (z.B. bei Kameras "Megapixel" statt "Release-Jahr").
+    Wichtig: Die "alternativen" MÜSSEN als Liste (Array) von reinen, exakten Produktnamen zurückgegeben werden, damit man direkt danach suchen kann. Passe die Schlüsselwörter der "stammdaten" sinnvoll an das Produkt an.
     """
     try:
         response = client.chat.completions.create(
@@ -42,7 +42,7 @@ def generiere_produkt_infos(produktname):
             "stammdaten": {"Status": "KI-Server überlastet", "Datenquelle": "Live-Suche"},
             "beschreibung": f"Live-KI-Analyse für '{produktname}' momentan ausgelastet. Angebote wurden trotzdem geladen!",
             "p_l_sieger": "Bitte anhand der Preise rechts prüfen.",
-            "alternativen": "Direkt auf Idealo oder Geizhals vergleichen.",
+            "alternativen": [f"{produktname} Alternative 1", f"{produktname} Alternative 2"],
             "zubehoer": ["Passendes Zubehör"]
         }
 
@@ -121,11 +121,10 @@ if suchbegriff:
         img_url = "https://upload.wikimedia.org/wikipedia/commons/d/d9/Espresso_machine_with_portafilter.jpg" if "quick" in suchbegriff.lower() or "3004" in suchbegriff else "https://upload.wikimedia.org/wikipedia/commons/1/15/No_image_available_600_x_450.svg"
         st.image(img_url, width=350)
         
-        # NEU: Das dynamische Stammdaten-Fenster
+        # Stammdaten-Fenster
         st.markdown("### 📋 Wichtige Stammdaten")
         stammdaten_dict = details.get("stammdaten", {})
         if stammdaten_dict:
-            # Wandelt das JSON in eine schicke Streamlit-Tabelle um
             df_stammdaten = pd.DataFrame(stammdaten_dict.items(), columns=["Eigenschaft", "Wert"])
             st.table(df_stammdaten)
         
@@ -136,8 +135,16 @@ if suchbegriff:
         st.warning("💰 **Preis/Leistung:**")
         st.write(details.get("p_l_sieger", ""))
         
-        st.info("🔄 **Beste Alternativen:**")
-        st.write(details.get("alternativen", ""))
+        # NEU & INTERAKTIV: Die Alternativen als klickbare Direktlinks zum Preisvergleich
+        st.info("🔄 **Beste Alternativen (Direktlink zum Preisvergleich):**")
+        alternativen_liste = details.get("alternativen", [])
+        if isinstance(alternativen_liste, list) and alternativen_liste:
+            for alt_item in alternativen_liste:
+                alt_encoded = urllib.parse.quote(alt_item)
+                # Erstellt einen sauberen Markdown-Link direkt zu Geizhals
+                st.markdown(f"• [{alt_item} ➔ Preisvergleich starten](https://geizhals.de/?fs={alt_encoded})")
+        else:
+            st.write("Keine Alternativen geladen.")
         
         st.markdown("---")
         st.markdown("### 🔌 Empfohlenes Zubehör")
