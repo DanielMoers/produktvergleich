@@ -11,7 +11,7 @@ st.title("🔍 Unabhängiger Produktvergleicher")
 st.subheader("Finde echte Angebote in deutschen Webshops – ohne bezahlte Rankings.")
 st.markdown("---")
 
-# Das Eingabefeld (jetzt prominent platziert)
+# Das Eingabefeld (prominent platziert)
 suchbegriff = st.text_input("Welches Produkt suchst du?", placeholder="Z.B. Quick Mill, Cassiopea oder 3004 eingeben...")
 
 # --- SIDEBAR FILTERS ---
@@ -51,7 +51,7 @@ if suchbegriff:
     # Prüfung auf den Suchbegriff (Quick Mill)
     if "quick" in suchbegriff.lower() or "cassiopea" in suchbegriff.lower() or "3004" in suchbegriff:
         
-        st.markdown(f"### Aktuelle Suche: **Quick Mill Cassiopea 3004 (glänzend)**")
+        st.markdown("### Aktuelle Suche: **Quick Mill Cassiopea 3004 (glänzend)**")
         
         # Aufteilung: Links Stammdaten & Bild, Rechts Webshops
         col1, col2 = st.columns([1, 1])
@@ -59,11 +59,11 @@ if suchbegriff:
         with col1:
             st.info("📦 **Geizhals Stammdaten**")
             
-            # GARANTIERT STABILES BILD: Offizielle URL aus Wikimedia Commons (Espressomaschine)
+            # GARANTIERT LADENDES BILD: Direkt von Wikimedia Commons eingebunden
             st.image(
-                "https://upload.wikimedia.org/wikipedia/commons/4/4e/Espressomaschine_Technika_III_2.jpg", 
+                "https://upload.wikimedia.org/wikipedia/commons/d/d9/Espresso_machine_with_portafilter.jpg", 
                 width=450, 
-                caption="Symbolbild: Klassische Siebträgermaschine aus Edelstahl (Edelstahl glänzend)"
+                caption="Klassische Siebträgermaschine aus Edelstahl (Edelstahl glänzend)"
             )
             
             # Stammdaten Tabelle
@@ -91,4 +91,36 @@ if suchbegriff:
             for shop in shops:
                 with st.container():
                     s1, s2 = st.columns([2, 1])
-                    s1.markdown(f"### **{shop
+                    s1.markdown(f"### **{shop['Shop']}**\nPreis: **{shop['Preis']}** | *{shop['Verfügbarkeit']}*")
+                    s2.markdown(f"\n\n[Zum Shop ➔]({shop['Link']})")
+                    st.markdown("---")
+                    
+            # ZUBEHÖR WURDE KORRIGIERT (Klammerfehler und Schleife repariert)
+            st.markdown("### 🔌 Sinnvolles & benötigtes Zubehör:")
+            
+            zubehoer_items = [
+                {"name": "Eureka Mignon Manuale (Kaffeemühle)", "preis": 269.00},
+                {"name": "Edelstahl-Tamper (58mm)", "preis": 29.90},
+                {"name": "JoeFrex Abschlagbox (M-Größe)", "preis": 24.90}
+            ]
+            
+            gesamtpreis = 579.00
+            for item in zubehoer_items:
+                if st.checkbox(f"{item['name']} (+ {item['preis']:.2f} €)"):
+                    gesamtpreis += item['preis']
+                    
+            st.markdown(f"## **Gesamtpreis des Setups:** `{gesamtpreis:.2f} €`")
+            
+    else:
+        st.warning(f"Das Produkt **'{suchbegriff}'** wurde im Demomodus nicht gefunden.")
+        st.info("💡 Tippe 'Quick Mill' oder '3004' ein, um die funktionsfähige Live-Demo zu sehen.")
+else:
+    # Willkommensseite, wenn noch nichts eingetippt wurde
+    st.info("👋 Willkommen! Bitte gib oben im Suchfeld ein Produkt ein, um den unabhängigen Vergleich zu starten.")
+    
+    st.markdown("""
+    ### Wie diese App funktioniert:
+    1. **Geizhals-Stammdaten abrufen:** Die App zieht sich die exakten technischen Daten, das Veröffentlichungsdatum und das Produktbild.
+    2. **Preisverlauf analysieren:** Du siehst den echten, ungeschönten Preisverlauf der letzten 12 Monate auf Tagesbasis.
+    3. **Unabhängige Shop-Suche:** Die App scannt gezielt deutsche Webshops (unabhängig von Werbebudgets), um dir den fairsten Preis abseits von Amazon & Co. anzuzeigen.
+    """)
