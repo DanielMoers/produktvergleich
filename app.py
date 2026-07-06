@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
+import random
 from datetime import datetime, timedelta
 
 # --- APP CONFIG ---
@@ -16,29 +16,37 @@ suchbegriff = st.text_input("Welches Produkt suchst du? (z.B. Quick Mill Cassiop
 # --- NAVIGATION IN DER SIDEBAR ---
 kategorie = st.sidebar.selectbox("Produktkategorie filtern:", ["Alle Kategorien", "Kaffeemaschinen & Zubehör", "Fotografie & Video"])
 
-# --- FUNKTION FÜR TAGES-PREISVERLAUF (12 MONATE) ---
+# --- FUNKTION FÜR TAGES-PREISVERLAUF (12 MONATE ohne externe Bibliotheken) ---
 def generiere_tages_preise():
-    # Enddatum ist heute, Startdatum vor genau 365 Tagen
     end_date = datetime.now()
     start_date = end_date - timedelta(days=365)
     
     # Datums-Reihe auf Tagesbasis erstellen
     datums_liste = pd.date_range(start=start_date, end=end_date, freq='D')
     
-    # Realistischen, leicht schwankenden Preisverlauf simulieren (Trend nach unten von ~650€ auf ~579€)
-    np.random.seed(42) # Sorgt dafür, dass der Graph stabil bleibt
-    basis_trend = np.linspace(649, 579, len(datums_liste))
-    rauschen = np.random.normal(0, 4, len(datums_liste)) # Kleine tägliche Schwankungen
-    preise = basis_trend + rauschen
+    # Realistischen Trend von ~649€ auf ~579€ berechnen
+    anzahl_tage = len(datums_liste)
+    preise = []
     
-    # Einzelne Ausreißer (kurzzeitige Rabattaktionen an bestimmten Tagen) einbauen
-    for i in [50, 120, 230, 310]:
-        if i < len(preise):
-            preise[i] -= 35
+    # Fixer Start-Zufallswert, damit der Graph bei jedem Neuladen gleich aussieht
+    random.seed(42)
+    
+    for i in range(anzahl_tage):
+        # Linearer Abfall von 649 auf 579
+        basis_preis = 649 - (i * (649 - 579) / anzahl_tage)
+        # Kleines tägliches Rauschen (+/- 4 Euro)
+        rauschen = random.uniform(-4, 4)
+        aktueller_preis = basis_preis + rauschen
+        
+        # Ein paar künstliche Rabatt-Ausreißer einbauen
+        if i in [50, 120, 230, 310]:
+            aktueller_preis -= 35
+            
+        preise.append(round(aktueller_preis, 2))
             
     df_preise = pd.DataFrame({
         "Datum": datums_liste,
-        "Preis (€)": np.round(preise, 2)
+        "Preis (€)": preise
     }).set_index("Datum")
     
     return df_preise
@@ -56,8 +64,8 @@ if suchbegriff:
         with col1:
             st.info("📦 **Geizhals Stammdaten**")
             
-            # WUNSCH: Neues, stabiles Produktbild (Falls Großansicht gewünscht, Breite angepasst)
-            st.image("https://images.unsplash.com/photo-1517256064527-09c53b2d0c6b?w=500&auto=format&fit=crop&q=60", width=400, caption="Quick Mill Cassiopea 3004 – Dual-Thermoblock Edelstahl")
+            # Ein absolut stabiles Platzhalter-Bild von Unsplash (Kaffee-Thema), das garantiert lädt
+            st.image("https://images.unsplash.com/photo-1517256064527-09c53b2d0c6b?w=500", width=400, caption="Quick Mill Cassiopea 3004 – Edelstahl")
             
             # Stammdaten inklusive Erscheinungsdatum
             stammdaten = {
@@ -66,4 +74,44 @@ if suchbegriff:
             }
             st.table(pd.DataFrame(stammdaten))
             
-            # WUNSCH
+            # Preisverlauf tagesgenau über 12 Monate
+            st.markdown("**Preisverlauf auf Tagesebene (Letzte 12 Monate):**")
+            df_tagesverlauf = generiere_tages_preise()
+            st.line_chart(df_tagesverlauf)
+
+        with col2:
+            st.success("🏪 **Gefundene Angebote in deutschen Webshops**")
+            
+            shops = [
+                {"Shop": "Kaffee24.de", "Preis": "579,00 €", "Verfügbarkeit": "Sofort lieferbar (1-3 Tage)", "Link": "https://www.kaffee24.de/quick-mill-cassiopea-3004-espressomaschine-glaenzend"},
+                {"Shop": "Stoll-Espresso.de", "Preis": "649,00 €", "Verfügbarkeit": "Lieferzeit 2-4 Tage", "Link": "#"},
+                {"Shop": "Roastmarket.de", "Preis": "679,00 €", "Verfügbarkeit": "Sofort lieferbar", "Link": "#"}
+            ]
+            
+            for shop in shops:
+                with st.container():
+                    s1, s2 = st.columns([2, 1])
+                    s1.markdown(f"### **{shop['Shop']}**\nPreis: **{shop['Preis']}** | *{shop['Verfügbarkeit']}*")
+                    s2.markdown(f"\n\n[Zum Shop ➔]({shop['Link']})")
+                    st.markdown("---")
+                    
+            # ZUBEHÖR
+            st.markdown("### 🔌 Sinnvolles & benötigtes Zubehör:")
+            zubehoer_items = {
+                "Eureka Mignon Manuale (Kaffeemühle)": 269.00,
+                "Edelstahl-Tamper (58mm)": 29.90,
+                "JoeFrex Abschlagbox (M-Größe)": 24.90
+            }
+            
+            gesamtpreis = 579.00
+            for item, preis in zubehoer_items.items():
+                if st.checkbox(f"{item} (+ {preis:.2f} €)"):
+                    gesamtpreis += preis
+                    
+            st.markdown(f"## **Gesamtpreis des Setups:** `{gesamtpreis:.2f} €`")
+            
+    else:
+        st.warning(f"Das Produkt **'{suchbegriff}'** wurde im Demomodus nicht gefunden.")
+        st.info("💡 Gib 'Quick Mill' ein, um die Live-Demo zu sehen.")
+else:
+    st.info("👆 Bitte gib oben in das Suchfeld ein Produkt ein (z.B. 'Quick Mill'), um den Vergleicher zu starten.")
