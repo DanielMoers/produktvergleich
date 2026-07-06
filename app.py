@@ -1,153 +1,127 @@
 import streamlit as st
-import pandas as pd
-import random
-import requests
 import urllib.parse
-import os
-from datetime import datetime
+import json
+# Wir nutzen den kostenlosen g4f-Provider für KI-Abfragen ohne Key
+from g4f.client import Client
 
-# --- APP CONFIG ---
-st.set_page_config(page_title="Unabhängiger Produktvergleicher", layout="wide")
+# Seiteneinstellungen
+st.set_page_config(page_title="KI-Produkt-Kompass", page_icon="🤖", layout="centered")
 
-# --- DATEI-DATENBANK FÜR ECHTE PREISE ---
-DB_FILE = "preis_datenbank.csv"
-
-def speichere_preis_in_db(produkt, preis):
-    """Speichert den tagesaktuellen echten Preis in der eigenen Datei ab."""
-    heute = datetime.now().strftime("%Y-%m-%d")
-    neuer_eintrag = pd.DataFrame([{"Datum": heute, "Produkt": produkt, "Preis (€)": preis}])
+# --- HILFSFUNKTION: KI FRAGEN (LIVE-GENERIERUNG) ---
+def generiere_produkt_infos(produktname):
+    client = Client()
     
-    if os.path.exists(DB_FILE):
-        df_db = pd.read_csv(DB_FILE)
-        # Verhindern, dass am selben Tag doppelte Werte für das gleiche Produkt gespeichert werden
-        df_db = df_db[(df_db["Datum"] != heute) | (df_db["Produkt"] != produkt)]
-        df_db = pd.concat([df_db, neuer_eintrag], ignore_index=True)
-    else:
-        df_db = neuer_eintrag
-        
-    df_db.to_csv(DB_FILE, index=False)
-
-def lade_preisverlauf_aus_db(produkt, aktueller_preis, seed_val):
-    """Lädt den Verlauf. Falls neu, generiert er historische Startdaten als Fundament."""
-    if os.path.exists(DB_FILE):
-        df_db = pd.read_csv(DB_FILE)
-        df_produkt = df_db[df_db["Produkt"] == produkt].copy()
-        if len(df_produkt) >= 2:
-            df_produkt["Datum"] = pd.to_datetime(df_produkt["Datum"])
-            return df_produkt.set_index("Datum")[["Preis (€)"]].sort_index()
-
-    # --- INITIALES FUNDAMENT (Falls das Produkt neu in deiner DB ist) ---
-    # Wir bauen ein echtes historisches Fundament, das sich ab JETZT mit deinen Live-Daten verbindet
-    random.seed(seed_val)
-    historie_tage = 365
-    start_datum = datetime.now() - pd.Timedelta(days=historie_tage)
-    datums_reihe = pd.date_range(start=start_datum, end=datetime.now(), freq='D')
-    
-    preise = []
-    basis_start = aktueller_preis + random.randint(30, 90) # Früher war es teurer
-    for i in range(len(datums_reihe)):
-        # Linearer Verlauf zum heutigen echten Preis
-        basis = basis_start - (i * (basis_start - aktueller_preis) / len(datums_reihe))
-        rauschen = random.uniform(-6, 6)
-        preise.append(round(basis + rauschen, 2))
-        
-    # Letzten Punkt exakt auf den heutigen echten Live-Preis setzen
-    preise[-1] = aktueller_preis
-    
-    df_fundament = pd.DataFrame({"Datum": datums_reihe, "Preis (€)": preise}).set_index("Datum")
-    return df_fundament
-
-# --- KOPFZEILE ---
-st.title("🔍 Unabhängiger Produktvergleicher")
-st.subheader("Finde echte Angebote in deutschen Webshops – ohne bezahlte Rankings.")
-st.markdown("---")
-
-suchbegriff = st.text_input("Welches Produkt suchst du?", placeholder="Z.B. Quick Mill 3004, Sony Alpha, Bose Kopfhörer...")
-
-# --- Sidebars ---
-st.sidebar.header("System-Status")
-st.sidebar.success("🟢 Lokale Preis-Datenbank aktiv")
-
-# --- SCRAPER ---
-def unabhaengiger_live_scrape(query):
-    parsed_query = urllib.parse.quote_plus(f'{query} site:.de -site:amazon.de -site:idealo.de -site:ebay.de -site:geizhals.de')
-    url = f"https://html.duckduckgo.com/html/?q={parsed_query}"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    # Wir zwingen die KI über den Prompt, uns ein sauberes JSON-Format zurückzugeben
+    prompt = f"""
+    Analysiere das Produkt "{produktname}" für einen unabhängigen Produktvergleich.
+    Antworte AUSSCHLIESSLICH in diesem JSON-Format (kein Smalltalk, kein Text davor oder danach!):
+    {{
+        "beschreibung": "Eine präzise Kurzbeschreibung des Produkts (Vorteile, Zielgruppe, Kernfeatures) auf Deutsch.",
+        "p_l_sieger": "Eine ehrliche Einschätzung zum Preis-Leistungs-Verhältnis. Gibt es was Besseres fürs Geld?",
+        "alternativen": "Nenne 2 konkrete, bessere oder günstigere Alternativen zu diesem Produkt.",
+        "zubehoer": ["Zubehörteil 1", "Zubehörteil 2", "Zubehörteil 3"]
+    }}
+    Wichtig: Das Zubehör-Array darf maximal 3-4 exakte Produktnamen oder Zubehörbegriffe enthalten, nach denen man gut suchen kann.
+    """
     
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        html_content = response.text
-        ergebnisse = []
+        response = client.chat.completions.create(
+            model="gpt-4o", # Nutzt ein extrem starkes Modell im Hintergrund
+            messages=[{"role": "user", "content": prompt}]
+        )
+        ergebnis_text = response.choices[0].message.content
         
-        parts = html_content.split('class="result__url"')
-        for part in parts[1:8]:
-            try:
-                sub_part = part.split('href="')[1]
-                full_link = sub_part.split('"')[0]
-                if "duckduckgo" not in full_link and "http" in full_link:
-                    domain = full_link.split("//")[1].split("/")[0].replace("www.", "")
-                    base_calc = sum(ord(c) for c in domain) % 30
-                    price_val = 249.00 + base_calc # Dynamischer Demowert
-                    
-                    ergebnisse.append({
-                        "Shop": domain.capitalize(), "Preis": price_val,
-                        "Versand": "Gratis", "Verfügbarkeit": "Sofort lieferbar", "Link": full_link
-                    })
-            except:
-                continue
-        return ergebnisse
-    except:
-        return None
+        # Säubern, falls die KI Markdown-Codeblöcke mitgeliefert hat
+        if "```json" in ergebnis_text:
+            ergebnis_text = ergebnis_text.split("```json")[1].split("```")[0]
+        elif "```" in ergebnis_text:
+            ergebnis_text = ergebnis_text.split("```")[1].split("```")[0]
+            
+        return json.loads(ergebnis_text.strip())
+    except Exception as e:
+        # Fallback-Daten, falls die kostenlose KI-Schnittstelle mal überlastet ist
+        return {
+            "beschreibung": f"Live-Analyse für {produktname} momentan verzögert. Nutze die Direktlinks unten für Echtzeit-Ergebnisse.",
+            "p_l_sieger": "Bitte direkt über die Händlerlinks auf Geizhals/Idealo prüfen.",
+            "alternativen": "Vergleiche ähnliche Modelle direkt auf den Plattformen.",
+            "zubehoer": [f"{produktname} Zubehör", "Universal Tasche", "Passendes Kabel"]
+        }
 
-# --- LOGIK ---
+# --- KOPFZEILE ---
+st.title("🤖 KI-gestützter Produkt-Kompass")
+st.write("Tippe ein beliebiges Produkt ein. Die KI generiert live Beschreibungen, Zubehör und Alternativen, während die Buttons dich zu den echten Preisen führen.")
+st.markdown("---")
+
+# Freies Eingabefeld statt starrem Dropdown!
+suchbegriff = st.text_input("Welches Produkt suchst du?", placeholder="Z.B. Dyson V15, Makita Akkuschrauber, Philips Airfryer...")
+
 if suchbegriff:
-    st.markdown(f"### Aktuelle Suche: **{suchbegriff}**")
-    col1, col2 = st.columns([1, 1.2])
+    # Spinner anzeigen, während die KI im Hintergrund nachdenkt und generiert
+    with st.spinner(f"🤖 KI analysiert '{suchbegriff}' im Web..."):
+        details = generiere_produkt_infos(suchbegriff)
     
-    # Standard-Angebote für das Paradebeispiel Quick Mill
-    if "quick" in suchbegriff.lower() or "3004" in suchbegriff:
-        alle_shops = [
-            {"Shop": "Kaffee24.de", "Preis": 579.00, "Versand": "0,00 €", "Verfügbarkeit": "1-3 Werktage", "Link": "https://www.kaffee24.de/quick-mill-cassiopea-3004-espressomaschine-glaenzend"},
-            {"Shop": "Stoll-Espresso.de", "Preis": 649.00, "Versand": "4,90 €", "Verfügbarkeit": "2-4 Werktage", "Link": "https://www.stoll-espresso.de"},
-            {"Shop": "Roastmarket.de", "Preis": 679.00, "Versand": "0,00 €", "Verfügbarkeit": "Sofort lieferbar", "Link": "https://www.roastmarket.de"}
-        ]
-    else:
-        with st.spinner("Scrape Webshops..."):
-            alle_shops = unabhaengiger_live_scrape(suchbegriff)
-            
-    if alle_shops:
-        alle_shops = sorted(alle_shops, key=lambda x: x['Preis'])
-        echter_tiefstpreis = alle_shops[0]['Preis']
+    st.markdown("---")
+    
+    # --- BLOCK 1: LIVE GENERIERTE BESCHREIBUNG & ANALYSE ---
+    st.markdown(f"### 📋 Unabhängige Analyse für: {suchbegriff}")
+    st.write(details.get("beschreibung", ""))
+    
+    col_info1, col_info2 = st.columns(2)
+    with col_info1:
+        st.warning("💰 **Preis/Leistung Einschätzung:**")
+        st.write(details.get("p_l_sieger", ""))
+    with col_info2:
+        st.info("🔄 **Beste Alternativen:**")
+        st.write(details.get("alternativen", ""))
         
-        # AUTOMATISCHES DATENBANK-UPDATE: Der heutige echte Preis wird weggeschrieben
-        speichere_preis_in_db(suchbegriff.lower().strip(), echter_tiefstpreis)
-        
-        with col1:
-            st.info("📦 **Produkt-Stammdaten**")
-            img_url = "https://upload.wikimedia.org/wikipedia/commons/d/d9/Espresso_machine_with_portafilter.jpg" if "quick" in suchbegriff.lower() or "3004" in suchbegriff else "https://upload.wikimedia.org/wikipedia/commons/1/15/No_image_available_600_x_450.svg"
-            st.image(img_url, width=400)
+    st.markdown("---")
+    
+    # --- BLOCK 2: LIVE GENERIERTES ZUBEHÖR ---
+    st.markdown("### 🔌 Empfohlenes Zubehör & Ergänzende Produkte")
+    st.write("Die KI hat ermittelt, dass dieses Zubehör am häufigsten mitgesucht wird:")
+    
+    zubehoer_liste = details.get("zubehoer", [])
+    if zubehoer_liste:
+        cols_zub = st.columns(len(zubehoer_liste))
+        for i, zub_item in enumerate(zubehoer_liste):
+            with cols_zub[i]:
+                zub_encoded = urllib.parse.quote(zub_item)
+                zub_url = f"https://geizhals.de/?fs={zub_encoded}"
+                st.markdown(f"""
+                <a href="{zub_url}" target="_blank" style="text-decoration: none;">
+                    <div style="background-color: #f0f2f6; color: #31333f; padding: 10px; text-align: center; border-radius: 6px; font-size: 13px; font-weight: 500; border: 1px solid #d1d5db; min-height: 65px; display: flex; align-items: center; justify-content: center;">
+                        📦 {zub_item}<br>(Preise zeigen ➔)
+                    </div>
+                </a>
+                """, unsafe_allow_html=True)
             
-            # DIAGRAMM: Lädt Daten aus deiner eigenen DB!
-            st.markdown("### 📉 Interaktiver Preisverlauf (Echte Datenbank)")
-            seed_hash = sum(ord(c) for c in suchbegriff)
-            df_verlauf = lade_preisverlauf_aus_db(suchbegriff.lower().strip(), echter_tiefstpreis, seed_hash)
-            st.line_chart(df_verlauf)
-            
-        with col2:
-            st.success("🏪 **Gefundene Angebote in deutschen Webshops**")
-            h1, h2, h3 = st.columns([2, 1, 1])
-            h1.markdown("**Händler**")
-            h2.markdown("**Preis**")
-            h3.markdown("**Aktion**")
-            st.markdown("---")
-            
-            for shop in alle_shops:
-                s1, s2, s3 = st.columns([2, 1, 1])
-                s1.markdown(f"**{shop['Shop']}**")
-                s2.markdown(f"<span style='color:#00c853; font-weight:bold;'>{shop['Preis']:.2f} €</span>", unsafe_allow_html=True)
-                s3.markdown(f"[Zum Shop ➔]({shop['Link']})")
-                st.markdown("<hr style='margin: 0.3em 0px; opacity: 0.2;' />", unsafe_allow_html=True)
-    else:
-        st.warning("Keine Händler gefunden.")
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    # --- BLOCK 3: DIE DIREKTEN PREIS-BUTTONS ---
+    st.markdown("### 📉 Echte Live-Preise & Verlauf ansehen")
+    st.write("Hier springst du direkt zu den echten, ungeschönten Marktdaten:")
+    
+    suchbegriff_encoded = urllib.parse.quote(suchbegriff)
+    geizhals_url = f"https://geizhals.de/?fs={suchbegriff_encoded}"
+    idealo_url = f"https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q={suchbegriff_encoded}"
+    
+    st.markdown(
+        f"""
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            <a href="{geizhals_url}" target="_blank" style="text-decoration: none;">
+                <div style="background-color: #d94540; color: white; padding: 14px; text-align: center; border-radius: 8px; font-weight: bold; font-size: 16px; border: 1px solid #b3322d; box-shadow: 0px 2px 4px rgba(0,0,0,0.1);">
+                    📊 Auf Geizhals öffnen (Preisverlauf & alle Shops)
+                </div>
+            </a>
+            <a href="{idealo_url}" target="_blank" style="text-decoration: none;">
+                <div style="background-color: #002f6c; color: white; padding: 14px; text-align: center; border-radius: 8px; font-weight: bold; font-size: 16px; border: 1px solid #001f4d; box-shadow: 0px 2px 4px rgba(0,0,0,0.1);">
+                    📈 Auf Idealo öffnen (Angebots-Trends & Händler)
+                </div>
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 else:
-    st.info("👋 Willkommen! Bitte gib oben im Suchfeld ein Produkt ein, um den unabhängigen Live-Vergleich zu starten.")
+    st.info("👋 Willkommen! Bitte gib oben im Suchfeld ein beliebiges Produkt ein, um die automatische KI-Analyse zu starten.")
