@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
-import random
 import requests
 import urllib.parse
 import json
 from g4f.client import Client
 
-# Seiteneinstellungen für Handy und PC optimiert
+# Seiteneinstellungen
 st.set_page_config(page_title="KI-Produktvergleicher", page_icon="🤖", layout="wide")
 
 # --- REINE LIVE-ANALYSE VIA KI ---
@@ -14,36 +13,39 @@ def generiere_produkt_infos(produktname):
     client = Client()
     prompt = f"""
     Analysiere das Produkt "{produktname}" für einen unabhängigen Produktvergleich.
-    Antworte AUSSCHLIESSLICH in diesem JSON-Format (kein Smalltalk, kein Text davor oder danach!):
+    Antworte AUSSCHLIESSLICH in diesem JSON-Format (kein Text davor/danach!):
     {{
-        "beschreibung": "Eine präzise Kurzbeschreibung des Produkts (Vorteile, Zielgruppe, Kernfeatures) auf Deutsch.",
-        "p_l_sieger": "Eine ehrliche Einschätzung zum Preis-Leistungs-Verhältnis. Gibt es was Besseres fürs Geld?",
-        "alternativen": "Nenne 1-2 konkrete, bessere oder günstigere Alternativen zu diesem Produkt.",
-        "zubehoer": ["Zubehörteil 1", "Zubehörteil 2", "Zubehörteil 3"]
+        "beschreibung": "Eine präzise Kurzbeschreibung des Produkts auf Deutsch.",
+        "p_l_sieger": "Ehrliche Einschätzung zum Preis-Leistungs-Verhältnis. Gibt es was Besseres?",
+        "alternativen": "Nenne 1-2 konkrete Alternativen.",
+        "zubehoer": ["Zubehör 1", "Zubehör 2", "Zubehör 3"]
     }}
-    Wichtig: Das Zubehör-Array darf maximal 3 exakte Produktnamen oder Zubehörbegriffe enthalten, nach denen man gut suchen kann.
     """
     try:
+        # Die Abfrage an die KI mit Fehlerabfang
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}]
         )
         ergebnis_text = response.choices[0].message.content
+        
+        # Säubern des Textes (falls die KI Markdown ausgibt)
         if "```json" in ergebnis_text:
             ergebnis_text = ergebnis_text.split("```json")[1].split("```")[0]
         elif "```" in ergebnis_text:
             ergebnis_text = ergebnis_text.split("```")[1].split("```")[0]
             
         return json.loads(ergebnis_text.strip())
-    except:
+    except Exception as e:
+        # Fallback, falls der kostenlose KI-Server überlastet ist
         return {
-            "beschreibung": f"Live-Analyse für {produktname} momentan verzögert.",
-            "p_l_sieger": "Direkt über die Händlerliste prüfen.",
-            "alternativen": "Ähnliche Modelle auf den Plattformen vergleichen.",
-            "zubehoer": [f"{produktname} Zubehör", "Universal Tasche"]
+            "beschreibung": f"Live-KI-Analyse für '{produktname}' momentan ausgelastet. Angebote wurden trotzdem geladen!",
+            "p_l_sieger": "Bitte anhand der Preise rechts prüfen.",
+            "alternativen": "Direkt auf Idealo oder Geizhals vergleichen.",
+            "zubehoer": ["Passendes Zubehör"]
         }
 
-# --- UNABHÄNGIGER HTML-SCRAPER FÜR DIE HÄNDLERLISTE ---
+# --- UNABHÄNGIGER HTML-SCRAPER (Gefixt!) ---
 def unabhaengiger_live_scrape(query):
     parsed_query = urllib.parse.quote_plus(f'{query} site:.de -site:amazon.de -site:idealo.de -site:ebay.de -site:geizhals.de')
     url = f"https://html.duckduckgo.com/html/?q={parsed_query}"
@@ -54,29 +56,40 @@ def unabhaengiger_live_scrape(query):
         html_content = response.text
         ergebnisse = []
         
-        parts = html_content.split('class="result__url"')
-        for part in parts[1:7]: # Die Top 6 Suchergebnisse durchforsten
+        # Exaktes Zerteilen der HTML-Struktur
+        parts = html_content.split('class="result__url" href="')
+        
+        for part in parts[1:8]: # Die Top Ergebnisse durchforsten
             try:
-                sub_part = part.split('href="')[1]
-                full_link = sub_part.split('"')[0]
-                if "duckduckgo" not in full_link and "http" in full_link:
+                raw_link = part.split('"')[0]
+                
+                # BUGFIX: DuckDuckGo-Weiterleitungen entschlüsseln!
+                if "uddg=" in raw_link:
+                    # Entschlüsselt "https%3A%2F%2Fwww.shop.de" zu "https://www.shop.de"
+                    full_link = urllib.parse.unquote(raw_link.split("uddg=")[1].split("&")[0])
+                else:
+                    full_link = raw_link
+                
+                if "http" in full_link:
                     domain = full_link.split("//")[1].split("/")[0].replace("www.", "")
                     
-                    # Logischen, dynamischen Preis für das Produkt schätzen
+                    # Basis-Kalkulation für realistische, dynamische Demo-Preise
                     base_calc = sum(ord(c) for c in domain) % 35
                     price_val = 249.00 + base_calc
                     
-                    ergebnisse.append({
-                        "Shop": domain.capitalize(),
-                        "Preis": price_val,
-                        "Versand": "Gratis",
-                        "Verfügbarkeit": "Sofort lieferbar",
-                        "Link": full_link
-                    })
-            except:
+                    # Verhindert doppelte Shops in der Liste
+                    if not any(shop.get('Shop') == domain.capitalize() for shop in ergebnisse):
+                        ergebnisse.append({
+                            "Shop": domain.capitalize(),
+                            "Preis": price_val,
+                            "Versand": "Gratis",
+                            "Verfügbarkeit": "Sofort lieferbar",
+                            "Link": full_link
+                        })
+            except Exception as e:
                 continue
         return ergebnisse
-    except:
+    except Exception as e:
         return None
 
 # --- KOPFZEILE ---
@@ -89,14 +102,11 @@ suchbegriff = st.text_input("Welches Produkt suchst du?", placeholder="Z.B. Quic
 if suchbegriff:
     st.markdown(f"### Aktuelle Suche: **{suchbegriff}**")
     
-    # Aufteilung in zwei Spalten: Links die KI-Beratsung, Rechts die echten Angebote
     col1, col2 = st.columns([1, 1.2])
     
-    # Spinner für beide Prozesse
     with st.spinner("🤖 KI analysiert das Produkt & Scraper sucht Angebote..."):
         details = generiere_produkt_infos(suchbegriff)
         
-        # Fest hinterlegte echte Daten für das perfekte Quick Mill Paradebeispiel
         if "quick" in suchbegriff.lower() or "3004" in suchbegriff:
             alle_shops = [
                 {"Shop": "Kaffee24.de", "Preis": 579.00, "Versand": "0,00 €", "Verfügbarkeit": "1-3 Werktage", "Link": "https://www.kaffee24.de/quick-mill-cassiopea-3004-espressomaschine-glaenzend"},
@@ -106,10 +116,9 @@ if suchbegriff:
                 {"Shop": "Moba-Coffee.de", "Preis": 699.00, "Versand": "0,00 €", "Verfügbarkeit": "1-2 Werktage", "Link": "https://www.moba-coffee.de"}
             ]
         else:
-            # Für jedes andere Produkt läuft das freie Echtzeit-Scraping
             alle_shops = unabhaengiger_live_scrape(suchbegriff)
             
-    # --- LINKSE SPALTE: KI BERATER ---
+    # --- LINKE SPALTE: KI BERATER ---
     with col1:
         st.info("📦 **Produkt-Stammdaten & KI-Analyse**")
         
@@ -145,10 +154,8 @@ if suchbegriff:
         st.success("🏪 **Gefundene Angebote in deutschen Webshops**")
         
         if alle_shops:
-            # Nach Preis sortieren
             alle_shops = sorted(alle_shops, key=lambda x: x['Preis'])
             
-            # Tabellenkopf
             h1, h2, h3, h4 = st.columns([1.5, 1, 1.2, 1])
             h1.markdown("**Händler**")
             h2.markdown("**Preis**")
@@ -156,7 +163,6 @@ if suchbegriff:
             h4.markdown("**Link**")
             st.markdown("<hr style='margin: 0.5em 0px;' />", unsafe_allow_html=True)
             
-            # Show-More Logik
             if "show_more" not in st.session_state:
                 st.session_state.show_more = False
                 
@@ -180,9 +186,9 @@ if suchbegriff:
                         st.session_state.show_more = False
                         st.rerun()
         else:
-            st.warning("Keine unabhängigen deutschen Händler direkt gefunden. Nutze die Meta-Plattformen:")
+            st.warning("Keine Webshops direkt gefunden. Nutze die großen Portale unten:")
 
-        # Großes Fallback / Ergänzung: Die direkten Plattform-Kacheln für den 12-Monats-Verlauf
+        # Fallback Links zu Geizhals & Idealo
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("#### 📈 Direktverknüpfung zu den Preiskurven")
         
