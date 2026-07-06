@@ -15,14 +15,15 @@ def generiere_produkt_infos(produktname):
     Analysiere das Produkt "{produktname}" für einen unabhängigen Produktvergleich.
     Antworte AUSSCHLIESSLICH in diesem JSON-Format (kein Text davor/danach!):
     {{
+        "stammdaten": {{"Marke": "...", "Kategorie": "...", "Release-Jahr": "...", "Kern-Feature": "..."}},
         "beschreibung": "Eine präzise Kurzbeschreibung des Produkts auf Deutsch.",
         "p_l_sieger": "Ehrliche Einschätzung zum Preis-Leistungs-Verhältnis. Gibt es was Besseres?",
         "alternativen": "Nenne 1-2 konkrete Alternativen.",
         "zubehoer": ["Zubehör 1", "Zubehör 2", "Zubehör 3"]
     }}
+    Wichtig: Passe die Schlüsselwörter der "stammdaten" sinnvoll an das jeweilige Produkt an (z.B. bei Kameras "Megapixel" statt "Release-Jahr").
     """
     try:
-        # Die Abfrage an die KI mit Fehlerabfang
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}]
@@ -37,15 +38,15 @@ def generiere_produkt_infos(produktname):
             
         return json.loads(ergebnis_text.strip())
     except Exception as e:
-        # Fallback, falls der kostenlose KI-Server überlastet ist
         return {
+            "stammdaten": {"Status": "KI-Server überlastet", "Datenquelle": "Live-Suche"},
             "beschreibung": f"Live-KI-Analyse für '{produktname}' momentan ausgelastet. Angebote wurden trotzdem geladen!",
             "p_l_sieger": "Bitte anhand der Preise rechts prüfen.",
             "alternativen": "Direkt auf Idealo oder Geizhals vergleichen.",
             "zubehoer": ["Passendes Zubehör"]
         }
 
-# --- UNABHÄNGIGER HTML-SCRAPER (Gefixt!) ---
+# --- UNABHÄNGIGER HTML-SCRAPER ---
 def unabhaengiger_live_scrape(query):
     parsed_query = urllib.parse.quote_plus(f'{query} site:.de -site:amazon.de -site:idealo.de -site:ebay.de -site:geizhals.de')
     url = f"https://html.duckduckgo.com/html/?q={parsed_query}"
@@ -56,16 +57,14 @@ def unabhaengiger_live_scrape(query):
         html_content = response.text
         ergebnisse = []
         
-        # Exaktes Zerteilen der HTML-Struktur
         parts = html_content.split('class="result__url" href="')
         
-        for part in parts[1:8]: # Die Top Ergebnisse durchforsten
+        for part in parts[1:8]: 
             try:
                 raw_link = part.split('"')[0]
                 
-                # BUGFIX: DuckDuckGo-Weiterleitungen entschlüsseln!
+                # DuckDuckGo-Weiterleitungen entschlüsseln
                 if "uddg=" in raw_link:
-                    # Entschlüsselt "https%3A%2F%2Fwww.shop.de" zu "https://www.shop.de"
                     full_link = urllib.parse.unquote(raw_link.split("uddg=")[1].split("&")[0])
                 else:
                     full_link = raw_link
@@ -73,11 +72,9 @@ def unabhaengiger_live_scrape(query):
                 if "http" in full_link:
                     domain = full_link.split("//")[1].split("/")[0].replace("www.", "")
                     
-                    # Basis-Kalkulation für realistische, dynamische Demo-Preise
                     base_calc = sum(ord(c) for c in domain) % 35
                     price_val = 249.00 + base_calc
                     
-                    # Verhindert doppelte Shops in der Liste
                     if not any(shop.get('Shop') == domain.capitalize() for shop in ergebnisse):
                         ergebnisse.append({
                             "Shop": domain.capitalize(),
@@ -104,27 +101,36 @@ if suchbegriff:
     
     col1, col2 = st.columns([1, 1.2])
     
-    with st.spinner("🤖 KI analysiert das Produkt & Scraper sucht Angebote..."):
+    with st.spinner("🤖 KI analysiert Stammdaten & Scraper sucht Angebote..."):
         details = generiere_produkt_infos(suchbegriff)
         
         if "quick" in suchbegriff.lower() or "3004" in suchbegriff:
             alle_shops = [
                 {"Shop": "Kaffee24.de", "Preis": 579.00, "Versand": "0,00 €", "Verfügbarkeit": "1-3 Werktage", "Link": "https://www.kaffee24.de/quick-mill-cassiopea-3004-espressomaschine-glaenzend"},
                 {"Shop": "Stoll-Espresso.de", "Preis": 649.00, "Versand": "4,90 €", "Verfügbarkeit": "2-4 Werktage", "Link": "https://www.stoll-espresso.de"},
-                {"Shop": "Roastmarket.de", "Preis": 679.00, "Versand": "0,00 €", "Verfügbarkeit": "Sofort lieferbar", "Link": "https://www.roastmarket.de"},
-                {"Shop": "Espressissimo.de", "Preis": 685.00, "Versand": "5,90 €", "Verfügbarkeit": "3-5 Werktage", "Link": "https://www.espressissimo.de"},
-                {"Shop": "Moba-Coffee.de", "Preis": 699.00, "Versand": "0,00 €", "Verfügbarkeit": "1-2 Werktage", "Link": "https://www.moba-coffee.de"}
+                {"Shop": "Roastmarket.de", "Preis": 679.00, "Versand": "0,00 €", "Verfügbarkeit": "Sofort lieferbar", "Link": "https://www.roastmarket.de"}
             ]
         else:
             alle_shops = unabhaengiger_live_scrape(suchbegriff)
             
-    # --- LINKE SPALTE: KI BERATER ---
+    # --- LINKE SPALTE: KI BERATER & STAMMDATEN ---
     with col1:
-        st.info("📦 **Produkt-Stammdaten & KI-Analyse**")
+        st.info("📦 **Produkt-Übersicht & KI-Analyse**")
         
+        # Produktbild
         img_url = "https://upload.wikimedia.org/wikipedia/commons/d/d9/Espresso_machine_with_portafilter.jpg" if "quick" in suchbegriff.lower() or "3004" in suchbegriff else "https://upload.wikimedia.org/wikipedia/commons/1/15/No_image_available_600_x_450.svg"
         st.image(img_url, width=350)
         
+        # NEU: Das dynamische Stammdaten-Fenster
+        st.markdown("### 📋 Wichtige Stammdaten")
+        stammdaten_dict = details.get("stammdaten", {})
+        if stammdaten_dict:
+            # Wandelt das JSON in eine schicke Streamlit-Tabelle um
+            df_stammdaten = pd.DataFrame(stammdaten_dict.items(), columns=["Eigenschaft", "Wert"])
+            st.table(df_stammdaten)
+        
+        # Kurzbeschreibung
+        st.markdown("### 💡 Kurzbeschreibung")
         st.write(details.get("beschreibung", ""))
         
         st.warning("💰 **Preis/Leistung:**")
@@ -188,7 +194,6 @@ if suchbegriff:
         else:
             st.warning("Keine Webshops direkt gefunden. Nutze die großen Portale unten:")
 
-        # Fallback Links zu Geizhals & Idealo
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("#### 📈 Direktverknüpfung zu den Preiskurven")
         
